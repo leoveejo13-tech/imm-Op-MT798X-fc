@@ -170,7 +170,7 @@ jobs:
         key: ${{ steps.cache-key.outputs.CACHE_KEY }}
 
     # =========================================================
-    # 5.8 恢复 Toolchain —— 第二优先: Release 备份 (慢但不过期)
+    # 5.8 恢复 Toolchain —— 优先级 2: Release 备份 (永久备份)
     # =========================================================
     - name: Restore toolchain from Release backup
       if: steps.cache-restore.outputs.cache-hit != 'true'
@@ -182,21 +182,26 @@ jobs:
         cd openwrt
         CACHE_PREFIX="${{ steps.cache-key.outputs.CACHE_PREFIX }}"
 
-        # 检查 Release 是否存在
-        if ! gh release view toolchain-cache > /dev/null 2>&1; then
+        if ! gh release view toolchain-cache --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
           echo "restored=false" >> $GITHUB_OUTPUT
           echo "⚠️ toolchain-cache Release 不存在 (首次运行)"
           exit 0
         fi
 
-        # 查找匹配当前平台的缓存文件
-        ASSET_NAME=$(gh release view toolchain-cache --json assets \
+        ASSET_NAME=$(gh release view toolchain-cache \
+          --repo "$GITHUB_REPOSITORY" \
+          --json assets \
           -q '.assets[] | select(.name | startswith("'"$CACHE_PREFIX"'")) | .name' \
           2>/dev/null | head -1)
 
         if [ -n "$ASSET_NAME" ]; then
           echo "📦 从 Release 下载工具链: $ASSET_NAME"
-          gh release download toolchain-cache -p "$ASSET_NAME" -D . 2>/dev/null
+          echo "📍 Release 仓库: $GITHUB_REPOSITORY"
+
+          gh release download toolchain-cache \
+            --repo "$GITHUB_REPOSITORY" \
+            -p "$ASSET_NAME" \
+            -D . 2>/dev/null
 
           if [ -e "$ASSET_NAME" ]; then
             echo "📂 解压中..."
@@ -248,20 +253,6 @@ jobs:
         sed -i 's/ $(tool.*\/stamp-compile)//' Makefile
         echo "📌 Makefile 已修改，后续编译将跳过工具链"
 
-    # =========================================================
-    # 5.10 保存 Toolchain 缓存 (双写: actions/cache + Release)
-    # =========================================================
-    # 写入 actions/cache (快速恢复用，7天过期)
-    - name: Save toolchain to actions/cache
-      uses: actions/cache/save@v4
-      if: steps.toolchain.outputs.need_build == 'true'
-      with:
-        path: |
-          openwrt/staging_dir/host*
-          openwrt/staging_dir/tool*
-        key: ${{ steps.cache-key.outputs.CACHE_KEY }}
-
-    # 写入 Release (永久备份用)
     - name: Save toolchain to Release backup
       if: steps.toolchain.outputs.need_build == 'true'
       env:
@@ -271,30 +262,37 @@ jobs:
         CACHE_KEY="${{ steps.cache-key.outputs.CACHE_KEY }}"
         CACHE_PREFIX="${{ steps.cache-key.outputs.CACHE_PREFIX }}"
 
-        # 打包工具链
         echo "📦 打包工具链..."
         tar -I zstdmt -cf "${CACHE_KEY}.tzst" staging_dir/host* staging_dir/tool*
         ls -lh "${CACHE_KEY}.tzst"
 
-        # 检查并创建 toolchain-cache Release (只在不存在时创建)
-        if ! gh release view toolchain-cache > /dev/null 2>&1; then
+        echo "📍 Release 目标仓库: $GITHUB_REPOSITORY"
+
+        if ! gh release view toolchain-cache --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
           echo "📝 创建 toolchain-cache Release..."
           gh release create toolchain-cache \
+            --repo "$GITHUB_REPOSITORY" \
             --title "Toolchain Cache" \
             --notes "自动生成的工具链缓存 (勿手动删除)" \
             --latest=false
         fi
 
-        # 删除同平台的旧缓存 (保持 Release 整洁)
-        gh release view toolchain-cache --json assets -q '.assets[].name' 2>/dev/null | \
+        gh release view toolchain-cache \
+          --repo "$GITHUB_REPOSITORY" \
+          --json assets \
+          -q '.assets[].name' 2>/dev/null | \
           grep "^${CACHE_PREFIX}" | while read -r old_file; do
             echo "🗑️ 删除旧缓存: $old_file"
-            gh release delete-asset toolchain-cache "$old_file" -y 2>/dev/null || true
+            gh release delete-asset toolchain-cache "$old_file" \
+              --repo "$GITHUB_REPOSITORY" \
+              -y 2>/dev/null || true
           done
 
-        # 上传新缓存
         echo "📤 上传到 Release..."
-        gh release upload toolchain-cache "${CACHE_KEY}.tzst" --clobber
+        gh release upload toolchain-cache "${CACHE_KEY}.tzst" \
+          --repo "$GITHUB_REPOSITORY" \
+          --clobber
+
         rm -f "${CACHE_KEY}.tzst"
         echo "✅ 工具链已备份到 Release"
 
