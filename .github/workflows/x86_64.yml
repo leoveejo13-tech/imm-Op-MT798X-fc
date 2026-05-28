@@ -3,7 +3,8 @@ name: x86_64
 env:
   DEVICE_NAME: x86_64
   # REPO_URL: https://github.com/openwrt/openwrt
-  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_URL: https://github.com/coolsnowwolf/lede
+  # REPO_URL: https://github.com/immortalwrt/immortalwrt
   # REPO_BRANCH: openwrt-25.12
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
