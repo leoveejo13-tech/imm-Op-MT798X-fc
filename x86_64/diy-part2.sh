@@ -89,6 +89,7 @@ fi
 
 # lede vlmcsd 默认编译并且失败
 rm -rf feeds/packages/net/vlmcsd
+rm -rf package/feeds/luci/luci-app-vlmcsd
 # 禁用 vlmcsd
 sed -i '/CONFIG_PACKAGE_vlmcsd/d' .config
 sed -i '/CONFIG_PACKAGE_luci-app-vlmcsd/d' .config
