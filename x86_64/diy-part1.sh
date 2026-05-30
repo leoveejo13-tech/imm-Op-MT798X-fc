@@ -30,7 +30,12 @@ git clone --depth=1 -b dev https://github.com/vernesong/OpenClash.git package/cu
 # 功能插件
 git clone --depth=1 https://github.com/sirpdboy/luci-app-poweroffdevice.git package/custom/poweroffdevice
 git clone --depth=1 https://github.com/isalikai/luci-app-owq-wol.git package/custom/owq-wol
+
+# 更新 lucky
+rm -rf feeds/packages/net/lucky
+rm -rf feeds/luci/applications/luci-app-lucky
 git clone --depth=1 https://github.com/gdy666/luci-app-lucky.git package/custom/lucky
+
 git clone --depth=1 https://github.com/sbwml/luci-app-openlist2.git package/custom/openlist2
 git clone --depth=1 https://github.com/sbwml/luci-app-quickfile.git package/custom/quickfile
 
