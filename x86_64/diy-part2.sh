@@ -87,6 +87,37 @@ else
   fi
 fi
 
+# 升级替换 mosdns
+# drop mosdns and v2ray-geodata packages that come with the source
+find ./ | grep Makefile | grep v2ray-geodata | xargs rm -f
+find ./ | grep Makefile | grep mosdns | xargs rm -f
+
+git clone https://github.com/sbwml/luci-app-mosdns -b v5 package/custom/mosdns
+git clone https://github.com/sbwml/v2ray-geodata package/custom/v2ray-geodata
+
+rm -rf feeds/packages/lang/golang
+git clone https://github.com/sbwml/packages_lang_golang -b 26.x feeds/packages/lang/golang
+
+# 升级替换 smartdns
+WORKINGDIR="`pwd`/feeds/packages/net/smartdns"
+mkdir $WORKINGDIR -p
+rm $WORKINGDIR/* -fr
+wget https://github.com/pymumu/openwrt-smartdns/archive/master.zip -O $WORKINGDIR/master.zip
+unzip $WORKINGDIR/master.zip -d $WORKINGDIR
+mv $WORKINGDIR/openwrt-smartdns-master/* $WORKINGDIR/
+rmdir $WORKINGDIR/openwrt-smartdns-master
+rm $WORKINGDIR/master.zip
+
+LUCIBRANCH="master" #更换此变量
+WORKINGDIR="`pwd`/feeds/luci/applications/luci-app-smartdns"
+mkdir $WORKINGDIR -p
+rm $WORKINGDIR/* -fr
+wget https://github.com/pymumu/luci-app-smartdns/archive/${LUCIBRANCH}.zip -O $WORKINGDIR/${LUCIBRANCH}.zip
+unzip $WORKINGDIR/${LUCIBRANCH}.zip -d $WORKINGDIR
+mv $WORKINGDIR/luci-app-smartdns-${LUCIBRANCH}/* $WORKINGDIR/
+rmdir $WORKINGDIR/luci-app-smartdns-${LUCIBRANCH}
+rm $WORKINGDIR/${LUCIBRANCH}.zip
+
 # lede vlmcsd 默认编译并且失败
 rm -rf feeds/packages/net/vlmcsd
 rm -rf package/feeds/luci/luci-app-vlmcsd
