@@ -22,7 +22,7 @@ git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall2.git pa
 
 # OpenClash
 rm -rf feeds/luci/applications/luci-app-openclash
-git clone --depth=1 -b dev https://github.com/vernesong/OpenClash.git package/custom/openclash
+git clone --depth=1 -b master https://github.com/vernesong/OpenClash.git package/custom/openclash
 
 # SSR+
 # git clone --depth=1 https://github.com/fw876/helloworld.git package/custom/ssrp
