@@ -10,8 +10,7 @@ env:
   CONFIG_FILE: istore/istore-Aigo-AGS21.config
   DIY_P1_SH: istore/diy-part1.sh
   DIY_P2_SH: istore/diy-part2.sh
-  # ✅ [修复] 统一 diy 脚本路径前缀，请根据实际文件位置确认
-  DIY_P3_SH: istore/diy-part3.sh
+  DIY_P3_SH: diy-partX.sh
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
@@ -69,16 +68,16 @@ jobs:
         sudo -E apt-get -yqq update
         sudo -E apt-get -yqq full-upgrade
 
-        # 安装 eBPF / daed / ccache 编译依赖
+        # 安装 eBPF / daed 编译依赖
         sudo -E apt-get -yqq install clang llvm dwarves build-essential \
           libssl-dev libelf-dev bc flex bison python3 xz-utils tar \
-          dos2unix libfuse-dev ccache
+          dos2unix libfuse-dev
 
         # 安装 ImmortalWrt 官方编译依赖
         sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
 
-        # ✅ [优化] 使用官方脚本安装 pnpm，避免全局 npm 权限问题
-        curl -fsSL https://get.pnpm.io/install.sh | sudo sh -
+        # 安装 pnpm（daed 前端构建需要）
+        sudo npm install -g pnpm
 
         # 清理
         sudo -E apt-get -yqq autoremove --purge
@@ -137,14 +136,9 @@ jobs:
 
     # =========================================================
     # 5.5 加载自定义配置 (diy-part3.sh)
-    # ✅ [修复] 增加文件存在性检查提示，避免静默跳过
     # =========================================================
     - name: Load custom configuration (diy-part3.sh)
       run: |
-        if [ ! -e "$GITHUB_WORKSPACE/$DIY_P3_SH" ]; then
-          echo "⚠️ 未找到 $DIY_P3_SH，跳过此步骤"
-          exit 0
-        fi
         [ -e "$CONFIG_FILE" ] && cp "$CONFIG_FILE" openwrt/.config
         chmod +x "$DIY_P3_SH"
         cd openwrt
@@ -152,7 +146,6 @@ jobs:
 
     # =========================================================
     # 5.6 生成 Toolchain 缓存 Key
-    # ✅ [优化] 扩大 Hash 范围，包含 patches 和 Config.in
     # =========================================================
     - name: Generate toolchain cache key
       id: cache-key
@@ -164,9 +157,8 @@ jobs:
         TARGET=$(grep '^CONFIG_TARGET_BOARD=' .config | cut -d'"' -f2)
         SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | cut -d'"' -f2)
 
-        # ✅ [优化] 基于 tools/ 和 toolchain/ 全部关键文件生成 hash
-        TOOLS_HASH=$(find tools toolchain -type f \
-          \( -name "Makefile" -o -name "*.mk" -o -name "*.patch" -o -name "Config.in" \) \
+        # 基于 tools/ 和 toolchain/ 源码生成 hash
+        TOOLS_HASH=$(find tools toolchain -type f \( -name "Makefile" -o -name "*.mk" \) \
           -exec md5sum {} + 2>/dev/null | sort | md5sum | cut -d' ' -f1)
 
         CACHE_KEY="toolchain-${TARGET}-${SUBTARGET}-${TOOLS_HASH:0:16}"
@@ -194,7 +186,7 @@ jobs:
 
     # =========================================================
     # 5.8 恢复 Toolchain —— 第二优先: Release 备份
-    # ✅ [优化] 增加解压后完整性校验
+    # 精确匹配当前 CACHE_KEY.tzst，避免恢复旧工具链
     # =========================================================
     - name: Restore toolchain from Release backup
       if: steps.cache-restore.outputs.cache-hit != 'true'
@@ -232,15 +224,8 @@ jobs:
             tar -I unzstd -xf "$ASSET_NAME" || tar -xf "$ASSET_NAME"
             rm -f "$ASSET_NAME"
 
-            # ✅ [新增] 完整性校验
-            if [ ! -d staging_dir/host/bin ] || [ ! -d staging_dir/toolchain-* ]; then
-              echo "❌ 工具链缓存完整性校验失败，目录结构不完整"
-              echo "restored=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-
             echo "restored=true" >> "$GITHUB_OUTPUT"
-            echo "✅ Release 备份恢复成功并通过校验"
+            echo "✅ Release 备份恢复成功"
           else
             echo "restored=false" >> "$GITHUB_OUTPUT"
             echo "❌ Release 下载失败，未找到文件: $ASSET_NAME"
@@ -252,6 +237,9 @@ jobs:
 
     # =========================================================
     # 5.9 处理 Toolchain
+    # - actions/cache 命中：跳过工具链编译，不保存缓存
+    # - Release 命中：跳过工具链编译，但重新写入 actions/cache
+    # - 全部未命中：编译工具链，同时保存 actions/cache 和 Release
     # =========================================================
     - name: Handle toolchain
       id: toolchain
@@ -302,6 +290,8 @@ jobs:
 
     # =========================================================
     # 5.10 保存 Toolchain 到 actions/cache
+    # - 首次编译后保存
+    # - 从 Release 恢复后也保存
     # =========================================================
     - name: Save toolchain to actions/cache
       uses: actions/cache/save@v5
@@ -314,6 +304,7 @@ jobs:
 
     # =========================================================
     # 5.11 保存 Toolchain 到 Release 备份
+    # 仅首次编译工具链时执行
     # =========================================================
     - name: Save toolchain to Release backup
       if: steps.toolchain.outputs.need_save_release == 'true'
@@ -359,19 +350,6 @@ jobs:
 
         rm -f "${CACHE_KEY}.tzst"
         echo "✅ 工具链已备份到 Release"
-
-    # =========================================================
-    # 5.12 ✅ [新增] 恢复 ccache 缓存
-    # 加速非工具链部分的重复编译
-    # =========================================================
-    - name: Restore ccache
-      uses: actions/cache/restore@v5
-      id: ccache-restore
-      with:
-        path: /workdir/openwrt/.ccache
-        key: ccache-${{ env.DEVICE_NAME }}-${{ github.run_id }}
-        restore-keys: |
-          ccache-${{ env.DEVICE_NAME }}-
 
     # =========================================================
     # 6. SSH 调试（可选）
@@ -424,17 +402,7 @@ jobs:
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> "$GITHUB_ENV"
 
     # =========================================================
-    # 8.5 ✅ [新增] 保存 ccache 缓存
-    # =========================================================
-    - name: Save ccache
-      uses: actions/cache/save@v5
-      if: steps.compile.outputs.status == 'success'
-      with:
-        path: /workdir/openwrt/.ccache
-        key: ccache-${{ env.DEVICE_NAME }}-${{ github.run_id }}
-
-    # =========================================================
-    # 8.6 空间检查
+    # 8.5 空间检查
     # =========================================================
     - name: Check space usage
       if: (!cancelled())
